@@ -91,7 +91,7 @@ def scheduler():
         time.sleep(data["interval"] * 60)
         send_reminder()
 
-# ============ РП КОМАНДЫ В ГРУППЕ ============
+# ============ РП КОМАНДЫ ============
 
 # Создание РП команды
 @bot.message_handler(commands=['rp'])
@@ -199,9 +199,9 @@ def list_rp_commands(m):
 def handle_rp_command(m):
     text = m.text.strip()
     
-    # Пропускаем команды бота
-    if text.startswith('/'):
-        return
+    # Проверяем на "бяка" (это отдельная команда)
+    if text.lower().startswith('бяка'):
+        return  # Пропускаем, обработает другой хендлер
     
     # Разбиваем на слова
     words = text.split()
@@ -287,17 +287,18 @@ def handle_byaka(m):
     text = m.text.lower()
     
     # Парсим: "бяка кто что-то"
-    rest = text[5:].strip()
+    rest = text[5:].strip()  # "бяка" - 5 символов
     
     if not rest:
         bot.reply_to(m, "❌ Напиши: бяка кто [действие]")
         return
     
+    # Проверяем наличие "кто"
     if not rest.startswith("кто"):
-        bot.reply_to(m, "❌ Формат: бяка кто [действие]")
-        return
-    
-    action = rest[3:].strip()
+        # Если нет "кто", добавляем его автоматически
+        action = rest
+    else:
+        action = rest[3:].strip()  # Убираем "кто"
     
     if not action:
         bot.reply_to(m, "❌ Укажи действие: бяка кто пойдёт гулять")
@@ -322,13 +323,22 @@ def handle_byaka(m):
         # Выбираем случайного
         chosen = random.choice(candidates)
         
-        # Генерируем ответ
+        # Формируем ответ
         if chosen.username:
             response = f"🤔 Думаю, @{chosen.username}"
         else:
             response = f"🤔 Думаю, {chosen.first_name}"
         
-        bot.reply_to(m, f"{response} {action} 😄")
+        # Разные варианты ответов
+        responses = [
+            f"{response} {action} 😄",
+            f"💭 {response} {action}",
+            f"🎯 {response} {action}",
+            f"🤷‍♂️ {response} {action}"
+        ]
+        
+        final_response = random.choice(responses)
+        bot.reply_to(m, final_response)
         
     except Exception as e:
         logger.error(f"Ошибка в бяка: {e}")
@@ -353,7 +363,10 @@ def help_cmd(m):
             "/rpdel команда - удалить\n"
             "/rplist - список всех команд\n\n"
             "Пример: /rp обнять/♥️/обнял(а)\n"
-            "Использование: обнять @юзер"
+            "Использование: обнять @юзер\n\n"
+            "🎲 Игра Бяка:\n"
+            "бяка кто действие\n"
+            "Пример: бяка кто пойдёт гулять"
         )
 
 @bot.message_handler(commands=['list'])
@@ -456,7 +469,7 @@ logger.info(f"👥 Группа: {GROUP_ID}")
 
 # Проверка отправки в группу
 try:
-    bot.send_message(GROUP_ID, "🤖 Бот перезапущен! РП команды работают без префиксов 🎉")
+    bot.send_message(GROUP_ID, "🤖 Бот перезапущен! РП команды и Бяка работают! 🎉")
     logger.info("✅ Тестовое сообщение отправлено")
 except Exception as e:
     logger.error(f"❌ Ошибка отправки в группу: {e}")
