@@ -63,6 +63,7 @@ def save():
     try:
         with open(FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info("💾 Данные сохранены")
     except Exception as e:
         logger.error(f"Ошибка сохранения: {e}")
 
@@ -95,30 +96,52 @@ def create_rp(m):
             bot.reply_to(m, "❌ Только в группе!")
             return
         
-        args = m.text.replace("/rp ", "", 1).strip().split('/')
+        # Получаем текст после /rp
+        text = m.text.replace("/rp", "", 1).strip()
+        
+        # Разделяем по /
+        args = text.split('/')
+        
+        # Убираем пустые элементы
+        args = [arg.strip() for arg in args if arg.strip()]
+        
+        logger.info(f"Аргументы: {args}")
+        
         if len(args) < 3:
-            bot.reply_to(m, "❌ Формат: /rp команда/эмодзи/текст\nПример: /rp обнять/♥️/обнял(а)")
+            bot.reply_to(m, 
+                "❌ Формат: /rp команда/эмодзи/текст\n"
+                "Пример: /rp обнять/♥️/обнял(а)\n"
+                "Пример: /rp ударить/👊/ударил(а)"
+            )
             return
         
-        cmd = args[0].strip().lower()
-        emoji = args[1].strip()
-        action = args[2].strip()
+        cmd = args[0].lower()
+        emoji = args[1]
+        action = args[2]
+        
         user_id = str(m.from_user.id)
         
         if user_id not in data["rp_commands"]:
             data["rp_commands"][user_id] = {}
         
         if cmd in data["rp_commands"][user_id]:
-            bot.reply_to(m, f"⚠️ Команда '{cmd}' уже есть!")
+            bot.reply_to(m, f"⚠️ Команда '{cmd}' уже есть! Используй /rpdel {cmd}")
             return
         
         data["rp_commands"][user_id][cmd] = {"emoji": emoji, "text": action}
         save()
-        bot.reply_to(m, f"✅ Команда '{cmd}' создана!\nИспользуй: {cmd} @юзер")
+        
+        bot.reply_to(m, 
+            f"✅ Команда '{cmd}' создана!\n\n"
+            f"Эмодзи: {emoji}\n"
+            f"Действие: {action}\n\n"
+            f"Используй: {cmd} @юзер"
+        )
         logger.info(f"✅ Создана команда {cmd} для {m.from_user.first_name}")
+        
     except Exception as e:
         logger.error(f"Ошибка create_rp: {e}")
-        bot.reply_to(m, "❌ Ошибка")
+        bot.reply_to(m, f"❌ Ошибка: {str(e)}")
 
 @bot.message_handler(commands=['rpdel'])
 def delete_rp(m):
@@ -128,7 +151,7 @@ def delete_rp(m):
             bot.reply_to(m, "❌ Только в группе!")
             return
         
-        cmd = m.text.replace("/rpdel ", "", 1).strip().lower()
+        cmd = m.text.replace("/rpdel", "", 1).strip().lower()
         if not cmd:
             bot.reply_to(m, "❌ Укажи команду: /rpdel обнять")
             return
@@ -156,20 +179,20 @@ def list_rp(m):
             bot.reply_to(m, "📭 Нет РП команд. Создай: /rp обнять/♥️/обнял(а)")
             return
         
-        text = "📋 РП команды:\n\n"
+        text = "📋 РП команды в группе:\n\n"
         count = 0
         for uid, cmds in data["rp_commands"].items():
             try:
                 user = bot.get_chat_member(m.chat.id, int(uid))
                 name = user.user.first_name
                 for cmd, info in cmds.items():
-                    text += f"{name}: {cmd} {info['emoji']} ({info['text']})\n"
+                    text += f"{name}: {cmd} {info['emoji']} - {info['text']}\n"
                     count += 1
                     if count >= 30:
                         text += "\n...и ещё"
                         break
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Ошибка получения пользователя {uid}: {e}")
         
         bot.reply_to(m, text)
     except Exception as e:
@@ -185,7 +208,6 @@ def handle_rp(m):
         
         # Проверяем на бяка
         if text.lower().startswith('бяка'):
-            logger.info(f"🔄 Пропускаем бяка: {text}")
             return
         
         # Разбиваем на слова
@@ -218,7 +240,6 @@ def handle_rp(m):
         # 1. Реплай
         if m.reply_to_message:
             target = m.reply_to_message.from_user
-            logger.info(f"🎯 Цель по реплаю: {target.first_name}")
         
         # 2. @username
         if not target and target_text:
@@ -230,7 +251,6 @@ def handle_rp(m):
                     for member in members:
                         if member.user.username and member.user.username.lower() == username.lower():
                             target = member.user
-                            logger.info(f"🎯 Цель по @: {target.first_name}")
                             break
                 except:
                     pass
@@ -243,7 +263,6 @@ def handle_rp(m):
                     name = member.user.first_name or ""
                     if name.lower() in target_text.lower():
                         target = member.user
-                        logger.info(f"🎯 Цель по имени: {target.first_name}")
                         break
             except:
                 pass
@@ -251,72 +270,82 @@ def handle_rp(m):
         # Ответ
         if not target:
             bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action}")
-            logger.info(f"💬 Без цели: {emoji} {m.from_user.first_name} {action}")
         elif target.id == m.from_user.id:
             bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action} себя 😄")
-            logger.info(f"💬 Сам себя: {emoji} {m.from_user.first_name} {action} себя")
+        elif target.id == bot.get_me().id:
+            bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action} бота 😄")
         else:
             bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action} {target.first_name}")
-            logger.info(f"💬 {emoji} {m.from_user.first_name} {action} {target.first_name}")
             
     except Exception as e:
         logger.error(f"Ошибка handle_rp: {e}")
 
 # ============ ИГРА БЯКА ============
 
-@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID and m.text and m.text.lower().startswith('бяка'))
+@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID and m.text and 'бяка' in m.text.lower())
 def handle_byaka(m):
-    logger.info(f"🎲 Игра Бяка от {m.from_user.id}: {m.text}")
+    logger.info(f"🎲 Обнаружено 'бяка' от {m.from_user.first_name}: {m.text}")
     try:
         text = m.text.lower()
         
         # Убираем "бяка"
-        rest = text[5:].strip()
+        rest = text.replace('бяка', '', 1).strip()
         
         if not rest:
             bot.reply_to(m, "❌ Напиши: бяка кто [действие]")
             return
         
-        # Убираем "кто" если есть
-        if rest.startswith("кто"):
-            action = rest[3:].strip()
+        # Проверяем наличие "кто"
+        if 'кто' in rest:
+            # Берём всё после "кто"
+            parts = rest.split('кто', 1)
+            action = parts[1].strip() if len(parts) > 1 else ""
         else:
             action = rest
         
         if not action:
-            bot.reply_to(m, "❌ Укажи действие")
+            bot.reply_to(m, "❌ Укажи действие\nПример: бяка кто пойдёт гулять")
             return
         
-        # Получаем участников
-        members = bot.get_chat_members(m.chat.id)
-        candidates = []
-        bot_id = bot.get_me().id
+        logger.info(f"Действие: {action}")
         
-        for member in members:
-            user = member.user
-            if user.id != bot_id and user.id != m.from_user.id and not user.is_bot:
-                candidates.append(user)
-        
-        if not candidates:
-            bot.reply_to(m, "❌ Нет кандидатов 😅")
-            return
-        
-        # Выбираем случайного
-        chosen = random.choice(candidates)
-        logger.info(f"🎯 Выбран: {chosen.first_name}")
-        
-        # Ответ
-        if chosen.username:
-            response = f"🤔 Думаю, @{chosen.username}"
-        else:
-            response = f"🤔 Думаю, {chosen.first_name}"
-        
-        bot.reply_to(m, f"{response} {action} 😄")
-        logger.info(f"✅ Ответ бяка: {response} {action}")
-        
+        # Получаем участников чата
+        try:
+            members = bot.get_chat_members(m.chat.id)
+            candidates = []
+            bot_id = bot.get_me().id
+            
+            for member in members:
+                user = member.user
+                if user.id != bot_id and user.id != m.from_user.id and not user.is_bot:
+                    candidates.append(user)
+            
+            logger.info(f"Кандидатов: {len(candidates)}")
+            
+            if not candidates:
+                bot.reply_to(m, "❌ Нет кандидатов 😅")
+                return
+            
+            # Выбираем случайного
+            chosen = random.choice(candidates)
+            logger.info(f"🎯 Выбран: {chosen.first_name}")
+            
+            # Формируем ответ
+            if chosen.username:
+                response = f"🤔 Думаю, @{chosen.username}"
+            else:
+                response = f"🤔 Думаю, {chosen.first_name}"
+            
+            bot.reply_to(m, f"{response} {action} 😄")
+            logger.info(f"✅ Ответ бяка отправлен")
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения участников: {e}")
+            bot.reply_to(m, "❌ Ошибка получения списка участников")
+            
     except Exception as e:
         logger.error(f"Ошибка byaka: {e}")
-        bot.reply_to(m, "❌ Ошибка")
+        bot.reply_to(m, f"❌ Ошибка: {str(e)}")
 
 # ============ АДМИН КОМАНДЫ ============
 
@@ -324,7 +353,7 @@ def handle_byaka(m):
 def help_cmd(m):
     if m.chat.type == "private" and m.from_user.id == ADMIN_ID:
         bot.reply_to(m,
-            "👑 Команды:\n"
+            "👑 Команды админа:\n"
             "/list - список сообщений\n"
             "/add текст - добавить\n"
             "/del N - удалить\n"
@@ -420,11 +449,6 @@ def tg(m):
 def q(m):
     if m.chat.id == GROUP_ID:
         bot.reply_to(m, '💬 <a href="https://t.me/hahahahahahahahaaahhahahahahaha">Вопросы</a>', parse_mode="HTML")
-
-# ДЕБАГ - логируем все сообщения в группе
-@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID)
-def log_all_messages(m):
-    logger.info(f"📩 [{m.chat.id}] {m.from_user.first_name}: {m.text}")
 
 logger.info("🔥 Бот запущен!")
 logger.info(f"👑 Админ: {ADMIN_ID}")
