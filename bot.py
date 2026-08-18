@@ -32,27 +32,27 @@ except Exception as e:
     sys.exit(1)
 
 # Статусы по репутации
-RANKINGS = {
-    -100: "👻 Призрак",
-    -75: "💀 Тень",
-    -50: "😈 Недостойный",
-    -25: "😔 Опущенный",
-    -10: "🥴 Тёмный друн",
-    0: "🍺 Друн",
-    10: "😎 Бурмалда",
-    25: "🧠 Сократ",
-    50: "👑 Босс",
-    75: "⭐ Легенда",
-    100: "🔥 Бог"
-}
+RANKINGS = [
+    (-100, "👻 Призрак"),
+    (-75, "💀 Тень"),
+    (-50, "😈 Недостойный"),
+    (-25, "😔 Опущенный"),
+    (-10, "🥴 Тёмный друн"),
+    (0, "🍺 Друн"),
+    (10, "😎 Бурмалда"),
+    (25, "🧠 Сократ"),
+    (50, "👑 Босс"),
+    (75, "⭐ Легенда"),
+    (100, "🔥 Бог")
+]
 
 def get_rank(rep):
     """Получить статус по репутации"""
-    ranks = sorted(RANKINGS.keys())
-    for threshold in ranks:
-        if rep <= threshold:
-            return RANKINGS[threshold]
-    return RANKINGS[ranks[-1]]
+    # Идём с конца (от большего к меньшему)
+    for threshold, rank in reversed(RANKINGS):
+        if rep >= threshold:
+            return rank
+    return RANKINGS[0][1]  # Если меньше -100, возвращаем первый статус
 
 def load_data():
     """Загрузка данных из файла"""
@@ -60,7 +60,6 @@ def load_data():
         try:
             with open(FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Проверяем наличие ключа reputation
                 if "reputation" not in data:
                     data["reputation"] = {}
                 if "rep_cooldown" not in data:
@@ -82,7 +81,6 @@ def load_data():
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки: {e}")
     
-    # Создаём новые данные
     logger.info("🆕 Создаём новый файл данных")
     default_data = {
         "interval": 45,
@@ -157,7 +155,7 @@ def change_rep(giver_id, target_id, amount):
     if amount > 0:
         return True, f"✅ +1 реп пользователю!"
     else:
-        return True, f"❌ -1 реп пользователю!"
+        return True, f"✅ -1 реп пользователю!"
 
 def send_reminder():
     if data["messages"]:
@@ -238,7 +236,6 @@ def show_rep(m):
             bot.reply_to(m, "❌ Только в группе!")
             return
         
-        # Если есть реплай - показываем репутацию того, кому ответили
         if m.reply_to_message:
             target = m.reply_to_message.from_user
         else:
@@ -248,7 +245,6 @@ def show_rep(m):
         rep = user_data["rep"]
         rank = get_rank(rep)
         
-        # Имя пользователя
         name = target.first_name
         if target.username:
             username = f"@{target.username}"
@@ -258,14 +254,12 @@ def show_rep(m):
         # Определяем следующий статус
         next_rank = None
         need = None
-        ranks = sorted(RANKINGS.keys())
-        for threshold in ranks:
+        for threshold, rank_name in RANKINGS:
             if rep < threshold:
-                next_rank = RANKINGS[threshold]
+                next_rank = rank_name
                 need = threshold - rep
                 break
         
-        # Формируем ответ
         response = f"📊 Репутация {username}\n\n"
         response += f"⭐ Репутация: {rep}\n"
         response += f"🏅 Статус: {rank}\n"
@@ -273,7 +267,7 @@ def show_rep(m):
         if next_rank and need:
             response += f"📈 До {next_rank}: {need} репа\n"
         
-        # Добавляем информацию о кулдауне для автора
+        # Кулдаун для автора
         giver_data = get_user_rep(m.from_user.id)
         current_time = time.time()
         if current_time - giver_data["last_rep_time"] < data["rep_cooldown"]:
@@ -302,7 +296,6 @@ def top_rep(m):
             bot.reply_to(m, "📭 Нет данных о репутации")
             return
         
-        # Сортируем по репутации
         sorted_users = sorted(
             data["reputation"].items(),
             key=lambda x: x[1]["rep"],
@@ -431,7 +424,6 @@ def status_cmd(m):
             f"⏳ Кулдаун: {data['rep_cooldown']//60} мин"
         )
 
-# Команды в группе
 @bot.message_handler(commands=['discord'])
 def disc(m):
     if m.chat.id == GROUP_ID:
