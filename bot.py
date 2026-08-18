@@ -5,8 +5,6 @@ import json
 import os
 import sys
 import logging
-import random
-import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,6 +60,22 @@ def load_data():
         try:
             with open(FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+                # Проверяем наличие ключа reputation
+                if "reputation" not in data:
+                    data["reputation"] = {}
+                if "rep_cooldown" not in data:
+                    data["rep_cooldown"] = 300
+                if "messages" not in data:
+                    data["messages"] = [
+                        '🔔 Не забудь зайти в наш <a href="https://discord.gg/AqjCnK77c">Дискорд-сервер</a>!',
+                        '🔔 Подпишись на мой <a href="https://t.me/killer2017official">Телеграм-канал</a>!',
+                        '🔔 Есть вопрос или предложение? <a href="https://t.me/hahahahahahahahaaahhahahahahaha">Тебе сюда</a>!'
+                    ]
+                if "interval" not in data:
+                    data["interval"] = 45
+                if "index" not in data:
+                    data["index"] = 0
+                
                 logger.info(f"✅ Данные загружены из {FILE}")
                 logger.info(f"📊 Пользователей в репутации: {len(data.get('reputation', {}))}")
                 return data
@@ -78,9 +92,8 @@ def load_data():
             '🔔 Есть вопрос или предложение? <a href="https://t.me/hahahahahahahahaaahhahahahahaha">Тебе сюда</a>!'
         ],
         "index": 0,
-        "rp_commands": {},
-        "reputation": {},  # {user_id: {"rep": 0, "last_rep_time": 0}}
-        "rep_cooldown": 300  # 5 минут
+        "reputation": {},
+        "rep_cooldown": 300
     }
     
     with open(FILE, 'w', encoding='utf-8') as f:
@@ -141,7 +154,10 @@ def change_rep(giver_id, target_id, amount):
     data["reputation"][target_uid] = target_data
     save()
     
-    return True, f"✅ Репутация изменена на {amount}"
+    if amount > 0:
+        return True, f"✅ +1 реп пользователю!"
+    else:
+        return True, f"❌ -1 реп пользователю!"
 
 def send_reminder():
     if data["messages"]:
@@ -150,7 +166,7 @@ def send_reminder():
         save()
         try:
             bot.send_message(GROUP_ID, msg, parse_mode="HTML", disable_web_page_preview=True)
-            logger.info(f"✅ Отправлено")
+            logger.info("✅ Отправлено")
             return True
         except Exception as e:
             logger.error(f"❌ Ошибка отправки: {e}")
@@ -241,6 +257,7 @@ def show_rep(m):
         
         # Определяем следующий статус
         next_rank = None
+        need = None
         ranks = sorted(RANKINGS.keys())
         for threshold in ranks:
             if rep < threshold:
@@ -253,20 +270,19 @@ def show_rep(m):
         response += f"⭐ Репутация: {rep}\n"
         response += f"🏅 Статус: {rank}\n"
         
-        if next_rank:
+        if next_rank and need:
             response += f"📈 До {next_rank}: {need} репа\n"
         
-        # Добавляем информацию о кулдауне
-        if str(m.from_user.id) in data["reputation"]:
-            last_time = data["reputation"][str(m.from_user.id)]["last_rep_time"]
-            current_time = time.time()
-            if current_time - last_time < data["rep_cooldown"]:
-                wait = int(data["rep_cooldown"] - (current_time - last_time))
-                minutes = wait // 60
-                seconds = wait % 60
-                response += f"\n⏳ Кулдаун: {minutes} мин {seconds} сек"
-            else:
-                response += f"\n✅ Реп доступен!"
+        # Добавляем информацию о кулдауне для автора
+        giver_data = get_user_rep(m.from_user.id)
+        current_time = time.time()
+        if current_time - giver_data["last_rep_time"] < data["rep_cooldown"]:
+            wait = int(data["rep_cooldown"] - (current_time - giver_data["last_rep_time"]))
+            minutes = wait // 60
+            seconds = wait % 60
+            response += f"\n⏳ Твой кулдаун: {minutes} мин {seconds} сек"
+        else:
+            response += f"\n✅ Ты можешь ставить реп!"
         
         bot.reply_to(m, response)
         
@@ -291,14 +307,13 @@ def top_rep(m):
             data["reputation"].items(),
             key=lambda x: x[1]["rep"],
             reverse=True
-        )[:10]  # Топ 10
+        )[:10]
         
         response = "🏆 Топ репутации:\n\n"
         position = 1
         
         for uid, rep_data in sorted_users:
             try:
-                # Пытаемся получить пользователя
                 user = bot.get_chat_member(m.chat.id, int(uid))
                 name = user.user.first_name
                 if user.user.username:
@@ -307,7 +322,6 @@ def top_rep(m):
                 rep = rep_data["rep"]
                 rank = get_rank(rep)
                 
-                # Эмодзи для топ-3
                 medal = ""
                 if position == 1:
                     medal = "🥇 "
@@ -328,239 +342,6 @@ def top_rep(m):
         logger.error(f"Ошибка toprep: {e}")
         bot.reply_to(m, "❌ Ошибка")
 
-# ============ ИГРА БЯКА ============
-
-@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID and m.text and m.text.lower().startswith('бяка'))
-def handle_byaka(m):
-    """Игра Бяка"""
-    try:
-        text = m.text.lower()
-        rest = text[5:].strip()
-        
-        if not rest:
-            bot.reply_to(m, "❌ Напиши: бяка кто [действие]")
-            return
-        
-        # Проверяем на "кто"
-        if rest.startswith("кто"):
-            action = rest[3:].strip()
-        else:
-            action = rest
-        
-        if not action:
-            bot.reply_to(m, "❌ Укажи действие")
-            return
-        
-        # Получаем участников
-        members = bot.get_chat_members(m.chat.id)
-        candidates = []
-        bot_id = bot.get_me().id
-        
-        for member in members:
-            user = member.user
-            if user.id != bot_id and user.id != m.from_user.id and not user.is_bot:
-                candidates.append(user)
-        
-        if not candidates:
-            bot.reply_to(m, "❌ Нет кандидатов 😅")
-            return
-        
-        # Выбираем случайного
-        chosen = random.choice(candidates)
-        
-        # Получаем репутацию выбранного
-        user_rep = get_user_rep(chosen.id)
-        rep = user_rep["rep"]
-        rank = get_rank(rep)
-        
-        # Формируем ответ с репутацией
-        if chosen.username:
-            username = f"@{chosen.username}"
-        else:
-            username = chosen.first_name
-        
-        response = f"🤔 Думаю, {username}\n"
-        response += f"⭐ Репутация: {rep}\n"
-        response += f"🏅 Статус: {rank}\n"
-        response += f"📝 Действие: {action} 😄"
-        
-        bot.reply_to(m, response)
-        
-    except Exception as e:
-        logger.error(f"Ошибка byaka: {e}")
-        bot.reply_to(m, "❌ Ошибка")
-
-# ============ РП КОМАНДЫ ============
-
-@bot.message_handler(commands=['rp'])
-def create_rp(m):
-    try:
-        if m.chat.id != GROUP_ID:
-            bot.reply_to(m, "❌ Только в группе!")
-            return
-        
-        text = m.text.replace("/rp", "", 1).strip()
-        args = text.split('/')
-        args = [arg.strip() for arg in args if arg.strip()]
-        
-        if len(args) < 3:
-            bot.reply_to(m, 
-                "❌ Формат: /rp команда/эмодзи/текст\n"
-                "Пример: /rp обнять/♥️/обнял(а)"
-            )
-            return
-        
-        cmd = args[0].lower()
-        emoji = args[1]
-        action = args[2]
-        user_id = str(m.from_user.id)
-        
-        if user_id not in data["rp_commands"]:
-            data["rp_commands"][user_id] = {}
-        
-        if cmd in data["rp_commands"][user_id]:
-            bot.reply_to(m, f"⚠️ Команда '{cmd}' уже есть!")
-            return
-        
-        data["rp_commands"][user_id][cmd] = {"emoji": emoji, "text": action}
-        save()
-        
-        bot.reply_to(m, 
-            f"✅ Команда '{cmd}' создана!\n"
-            f"Эмодзи: {emoji}\n"
-            f"Действие: {action}\n\n"
-            f"Используй: {cmd} @юзер"
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка create_rp: {e}")
-        bot.reply_to(m, "❌ Ошибка")
-
-@bot.message_handler(commands=['rpdel'])
-def delete_rp(m):
-    try:
-        if m.chat.id != GROUP_ID:
-            bot.reply_to(m, "❌ Только в группе!")
-            return
-        
-        cmd = m.text.replace("/rpdel", "", 1).strip().lower()
-        if not cmd:
-            bot.reply_to(m, "❌ Укажи команду: /rpdel обнять")
-            return
-        
-        user_id = str(m.from_user.id)
-        if user_id in data["rp_commands"] and cmd in data["rp_commands"][user_id]:
-            del data["rp_commands"][user_id][cmd]
-            save()
-            bot.reply_to(m, f"✅ Команда '{cmd}' удалена!")
-        else:
-            bot.reply_to(m, f"❌ Команда '{cmd}' не найдена")
-            
-    except Exception as e:
-        logger.error(f"Ошибка delete_rp: {e}")
-        bot.reply_to(m, "❌ Ошибка")
-
-@bot.message_handler(commands=['rplist'])
-def list_rp(m):
-    try:
-        if m.chat.id != GROUP_ID:
-            bot.reply_to(m, "❌ Только в группе!")
-            return
-        
-        if not data["rp_commands"]:
-            bot.reply_to(m, "📭 Нет РП команд")
-            return
-        
-        text = "📋 РП команды:\n\n"
-        count = 0
-        for uid, cmds in data["rp_commands"].items():
-            try:
-                user = bot.get_chat_member(m.chat.id, int(uid))
-                name = user.user.first_name
-                for cmd, info in cmds.items():
-                    text += f"{name}: {cmd} {info['emoji']} ({info['text']})\n"
-                    count += 1
-                    if count >= 30:
-                        text += "\n...и ещё"
-                        break
-            except:
-                pass
-        
-        bot.reply_to(m, text)
-        
-    except Exception as e:
-        logger.error(f"Ошибка list_rp: {e}")
-        bot.reply_to(m, "❌ Ошибка")
-
-# ============ ОБРАБОТКА РП (БЕЗ ПРЕФИКСА) ============
-
-@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID and m.text and not m.text.startswith('/'))
-def handle_rp(m):
-    try:
-        text = m.text.strip()
-        
-        # Пропускаем бяка
-        if text.lower().startswith('бяка'):
-            return
-        
-        words = text.split()
-        if not words:
-            return
-        
-        cmd = words[0].lower()
-        user_id = str(m.from_user.id)
-        
-        if user_id not in data["rp_commands"]:
-            return
-        
-        if cmd not in data["rp_commands"][user_id]:
-            return
-        
-        cmd_info = data["rp_commands"][user_id][cmd]
-        emoji = cmd_info["emoji"]
-        action = cmd_info["text"]
-        
-        # Ищем цель
-        target = None
-        target_text = " ".join(words[1:]) if len(words) > 1 else ""
-        
-        if m.reply_to_message:
-            target = m.reply_to_message.from_user
-        
-        if not target and target_text:
-            mention = re.search(r'@(\w+)', target_text)
-            if mention:
-                username = mention.group(1)
-                try:
-                    members = bot.get_chat_members(m.chat.id)
-                    for member in members:
-                        if member.user.username and member.user.username.lower() == username.lower():
-                            target = member.user
-                            break
-                except:
-                    pass
-        
-        if not target and target_text:
-            try:
-                members = bot.get_chat_members(m.chat.id)
-                for member in members:
-                    name = member.user.first_name or ""
-                    if name.lower() in target_text.lower():
-                        target = member.user
-                        break
-            except:
-                pass
-        
-        if not target:
-            bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action}")
-        elif target.id == m.from_user.id:
-            bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action} себя 😄")
-        else:
-            bot.reply_to(m, f"{emoji} {m.from_user.first_name} {action} {target.first_name}")
-            
-    except Exception as e:
-        logger.error(f"Ошибка handle_rp: {e}")
-
 # ============ АДМИН КОМАНДЫ ============
 
 @bot.message_handler(commands=['start', 'help'])
@@ -574,16 +355,12 @@ def help_cmd(m):
             "/interval N - интервал\n"
             "/ping - тест\n"
             "/status - статус\n\n"
-            "⭐ Репутация (в группе):\n"
-            "/prep - +1 реп (реплай)\n"
-            "/mrep - -1 реп (реплай)\n"
+            "⭐ Команды репутации (в группе):\n"
+            "/prep (реплай) - +1 реп\n"
+            "/mrep (реплай) - -1 реп\n"
             "/rep - показать репутацию\n"
             "/toprep - топ репутации\n\n"
-            "🎭 РП команды (в группе):\n"
-            "/rp обнять/♥️/обнял(а) - создать\n"
-            "/rpdel обнять - удалить\n"
-            "/rplist - список\n\n"
-            "🎲 Игра: бяка кто пойдёт гулять"
+            "⏳ Кулдаун: 5 минут"
         )
 
 @bot.message_handler(commands=['list'])
@@ -643,16 +420,15 @@ def ping_cmd(m):
 @bot.message_handler(commands=['status'])
 def status_cmd(m):
     if m.chat.type == "private" and m.from_user.id == ADMIN_ID:
-        total_rp = sum(len(cmds) for cmds in data["rp_commands"].values())
         total_users = len(data["reputation"])
         bot.reply_to(m,
             f"📊 Статус бота:\n"
             f"📝 Сообщений: {len(data['messages'])}\n"
             f"⏱️ Интервал: {data['interval']} мин\n"
-            f"🎭 РП команд: {total_rp}\n"
             f"👥 Пользователей в репе: {total_users}\n"
             f"👥 Группа: {GROUP_ID}\n"
-            f"💾 Данные сохранены в {FILE}"
+            f"💾 Данные сохранены в {FILE}\n"
+            f"⏳ Кулдаун: {data['rep_cooldown']//60} мин"
         )
 
 # Команды в группе
@@ -678,7 +454,7 @@ logger.info(f"📁 Файл данных: {FILE}")
 logger.info(f"👥 Пользователей в репе: {len(data['reputation'])}")
 
 try:
-    bot.send_message(GROUP_ID, "✅ Бот перезапущен! Репутация сохранена!")
+    bot.send_message(GROUP_ID, "✅ Бот перезапущен! Репутация работает!")
 except Exception as e:
     logger.error(f"Ошибка отправки: {e}")
 
