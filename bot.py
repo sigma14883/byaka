@@ -31,7 +31,7 @@ except Exception as e:
     logger.error(f"❌ Ошибка: {e}")
     sys.exit(1)
 
-# Статусы по репутации
+# Статусы по репутации (порядок от меньшего к большему)
 RANKINGS = [
     (-100, "👻 Призрак"),
     (-75, "💀 Тень"),
@@ -49,10 +49,12 @@ RANKINGS = [
 def get_rank(rep):
     """Получить статус по репутации"""
     # Идём с конца (от большего к меньшему)
-    for threshold, rank in reversed(RANKINGS):
+    for i in range(len(RANKINGS) - 1, -1, -1):
+        threshold, rank = RANKINGS[i]
         if rep >= threshold:
             return rank
-    return RANKINGS[0][1]  # Если меньше -100, возвращаем первый статус
+    # Если репутация меньше -100
+    return RANKINGS[0][1]
 
 def load_data():
     """Загрузка данных из файла"""
@@ -83,7 +85,7 @@ def load_data():
     
     logger.info("🆕 Создаём новый файл данных")
     default_data = {
-        "interval": 45,
+        "interval": 5,
         "messages": [
             '🔔 Не забудь зайти в наш <a href="https://discord.gg/AqjCnK77c">Дискорд-сервер</a>!',
             '🔔 Подпишись на мой <a href="https://t.me/killer2017official">Телеграм-канал</a>!',
