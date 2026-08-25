@@ -10,11 +10,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import textwrap
 import requests
+import re
 
-# Исправляем кодировку
-import sys
-reload(sys)
-sys.setdefaultencoding('utf8')  # Это для Python 2
+# Убираем reload(sys) - он не нужен в Python 3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,17 +82,17 @@ def save():
 # ============ РЕПУТАЦИЯ ============
 
 RANKINGS = [
-    (-100, "👻 Призрак"),
-    (-75, "💀 Тень"),
-    (-50, "😈 Недостойный"),
-    (-25, "😔 Опущенный"),
-    (-10, "🥴 Тёмный друн"),
-    (0, "🍺 Друн"),
-    (10, "😎 Бурмалда"),
-    (25, "🧠 Сократ"),
-    (50, "👑 Босс"),
-    (75, "⭐ Легенда"),
-    (100, "🔥 Бог")
+    (-100, "Призрак"),
+    (-75, "Тень"),
+    (-50, "Недостойный"),
+    (-25, "Опущенный"),
+    (-10, "Тёмный друн"),
+    (0, "Друн"),
+    (10, "Бурмалда"),
+    (25, "Сократ"),
+    (50, "Босс"),
+    (75, "Легенда"),
+    (100, "Бог")
 ]
 
 def get_rank(rep):
@@ -212,6 +210,29 @@ def get_frame(m):
 
 # ============ СОЗДАНИЕ ЦИТАТЫ ============
 
+def remove_emojis(text):
+    """Удаляет эмодзи из текста"""
+    emoji_pattern = re.compile("["
+        u"\U0001F600-\U0001F64F"  # эмотиконы
+        u"\U0001F300-\U0001F5FF"  # символы
+        u"\U0001F680-\U0001F6FF"  # транспорт
+        u"\U0001F1E0-\U0001F1FF"  # флаги
+        u"\U00002500-\U00002BEF"  # китайские символы
+        u"\U00002702-\U000027B0"
+        u"\U000024C2-\U0001F251"
+        u"\U0001f926-\U0001f937"
+        u"\U00010000-\U0010ffff"
+        u"\u2640-\u2642" 
+        u"\u2600-\u2B55"
+        u"\u200d"
+        u"\u23cf"
+        u"\u23e9"
+        u"\u231a"
+        u"\ufe0f"
+        u"\u3030"
+        "]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
+
 def create_quote_image(text, user_info):
     """Создаёт цитату с аватаркой и рамкой"""
     size = 512
@@ -276,26 +297,21 @@ def create_quote_image(text, user_info):
         )
         draw.text(
             (avatar_x + avatar_size//2 - 10, avatar_y + avatar_size//2 - 15),
-            "👤",
+            "User",
             font=font_text,
             fill=(255, 255, 255)
         )
     
-    # Имя (без эмодзи)
-    name = user_info['name'].encode('ascii', 'ignore').decode('ascii') or "User"
+    # Имя (очищаем от эмодзи)
+    name = remove_emojis(user_info['name']) or "User"
     draw.text((avatar_x + avatar_size + 15, avatar_y + 5), name, font=font_name, fill=(255, 255, 255))
     
-    # Репутация (без эмодзи)
+    # Репутация
     rep_text = f"⭐ {user_info['rep']} | {user_info['rank']}"
-    # Убираем эмодзи из текста репутации
-    import re
-    rep_text = re.sub(r'[^\x00-\x7F]+', '', rep_text)
     draw.text((avatar_x + avatar_size + 15, avatar_y + 27), rep_text, font=font_rep, fill=(255, 215, 0))
     
     # Текст цитаты (очищаем от эмодзи)
-    quote_text = user_info['text']
-    # Убираем эмодзи
-    quote_text = re.sub(r'[^\x00-\x7F]+', ' ', quote_text)
+    quote_text = remove_emojis(user_info['text'])
     if len(quote_text) > 200:
         quote_text = quote_text[:197] + "..."
     
@@ -318,8 +334,8 @@ def create_quote_image(text, user_info):
         draw.text((x, y), line, font=font_text, fill=(255, 255, 255))
     
     # Подпись внизу
-    footer_text = user_info.get('username', user_info['name'])
-    footer_text = footer_text.encode('ascii', 'ignore').decode('ascii') or "User"
+    footer_text = user_info.get('username') or user_info['name']
+    footer_text = remove_emojis(footer_text) or "User"
     footer_text = f"— {footer_text}"
     try:
         bbox = draw.textbbox((0, 0), footer_text, font=font_name)
