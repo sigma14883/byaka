@@ -11,6 +11,11 @@ import io
 import textwrap
 import requests
 
+# Исправляем кодировку
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')  # Это для Python 2
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -129,40 +134,28 @@ def change_rep(giver_id, target_id, amount):
     
     return True, f"✅ {'+' if amount > 0 else ''}{amount} реп!"
 
-# ============ ЗАГРУЗКА И ОБРАБОТКА РАМКИ ============
+# ============ ЗАГРУЗКА РАМКИ ============
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(m):
-    """Обработка фото для установки рамки"""
     try:
-        # Проверяем, что это админ
         if m.from_user.id != ADMIN_ID:
             return
-        
-        # Проверяем, есть ли подпись
-        if not m.caption:
+        if not m.caption or m.caption.lower() not in ['/setframe', 'рамка']:
             return
         
-        # Проверяем подпись
-        if m.caption.lower() not in ['/setframe', 'рамка']:
-            return
-        
-        # Получаем фото
-        photo = m.photo[-1]  # Берём самое качественное
-        file_id = photo.file_id
-        file_info = bot.get_file(file_id)
+        photo = m.photo[-1]
+        file_info = bot.get_file(photo.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # Сохраняем как frame.png
         with open(FRAME_FILE, 'wb') as f:
             f.write(downloaded_file)
         
-        # Проверяем, что это PNG
         try:
             img = Image.open(FRAME_FILE)
             img.verify()
-            bot.reply_to(m, f"✅ Рамка установлена! Размер: {photo.width}x{photo.height}")
-            logger.info(f"✅ Рамка сохранена от {m.from_user.first_name}")
+            bot.reply_to(m, f"✅ Рамка установлена!")
+            logger.info(f"✅ Рамка сохранена")
         except Exception as e:
             bot.reply_to(m, f"❌ Файл повреждён: {e}")
             os.remove(FRAME_FILE)
@@ -173,37 +166,28 @@ def handle_photo(m):
 
 @bot.message_handler(content_types=['document'])
 def handle_document(m):
-    """Обработка документа PNG для установки рамки"""
     try:
-        # Проверяем админа
         if m.from_user.id != ADMIN_ID:
             return
-        
-        # Проверяем подпись
         if not m.caption or m.caption.lower() not in ['/setframe', 'рамка']:
             return
         
         doc = m.document
-        
-        # Проверяем, что это PNG
         if doc.mime_type != "image/png":
             bot.reply_to(m, "❌ Отправь PNG файл!")
             return
         
-        # Скачиваем
         file_info = bot.get_file(doc.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # Сохраняем
         with open(FRAME_FILE, 'wb') as f:
             f.write(downloaded_file)
         
-        # Проверяем
         try:
             img = Image.open(FRAME_FILE)
             img.verify()
-            bot.reply_to(m, f"✅ Рамка установлена! Файл: {doc.file_name}")
-            logger.info(f"✅ Рамка сохранена от {m.from_user.first_name}")
+            bot.reply_to(m, f"✅ Рамка установлена!")
+            logger.info(f"✅ Рамка сохранена")
         except Exception as e:
             bot.reply_to(m, f"❌ Файл повреждён: {e}")
             os.remove(FRAME_FILE)
@@ -212,15 +196,11 @@ def handle_document(m):
         logger.error(f"Ошибка загрузки документа: {e}")
         bot.reply_to(m, f"❌ Ошибка: {e}")
 
-# ============ ПОКАЗАТЬ ТЕКУЩУЮ РАМКУ ============
-
 @bot.message_handler(commands=['getframe'])
 def get_frame(m):
-    """Показать текущую рамку"""
     try:
         if m.from_user.id != ADMIN_ID:
             return
-        
         if os.path.exists(FRAME_FILE):
             with open(FRAME_FILE, 'rb') as f:
                 bot.send_photo(m.chat.id, f, caption="🖼️ Текущая рамка")
@@ -242,7 +222,6 @@ def create_quote_image(text, user_info):
     bg = Image.new('RGBA', (size, size), (20, 20, 20, 255))
     
     # Загружаем рамку
-    frame = None
     if os.path.exists(FRAME_FILE):
         try:
             frame = Image.open(FRAME_FILE).convert("RGBA")
@@ -302,18 +281,21 @@ def create_quote_image(text, user_info):
             fill=(255, 255, 255)
         )
     
-    # Имя
-    name_x = avatar_x + avatar_size + 15
-    name_y = avatar_y + 5
-    draw.text((name_x, name_y), user_info['name'], font=font_name, fill=(255, 255, 255))
+    # Имя (без эмодзи)
+    name = user_info['name'].encode('ascii', 'ignore').decode('ascii') or "User"
+    draw.text((avatar_x + avatar_size + 15, avatar_y + 5), name, font=font_name, fill=(255, 255, 255))
     
-    # Репутация
-    rep_y = name_y + 22
+    # Репутация (без эмодзи)
     rep_text = f"⭐ {user_info['rep']} | {user_info['rank']}"
-    draw.text((name_x, rep_y), rep_text, font=font_rep, fill=(255, 215, 0))
+    # Убираем эмодзи из текста репутации
+    import re
+    rep_text = re.sub(r'[^\x00-\x7F]+', '', rep_text)
+    draw.text((avatar_x + avatar_size + 15, avatar_y + 27), rep_text, font=font_rep, fill=(255, 215, 0))
     
-    # Текст цитаты
+    # Текст цитаты (очищаем от эмодзи)
     quote_text = user_info['text']
+    # Убираем эмодзи
+    quote_text = re.sub(r'[^\x00-\x7F]+', ' ', quote_text)
     if len(quote_text) > 200:
         quote_text = quote_text[:197] + "..."
     
@@ -336,7 +318,9 @@ def create_quote_image(text, user_info):
         draw.text((x, y), line, font=font_text, fill=(255, 255, 255))
     
     # Подпись внизу
-    footer_text = f"— {user_info['username']}" if user_info.get('username') else f"— {user_info['name']}"
+    footer_text = user_info.get('username', user_info['name'])
+    footer_text = footer_text.encode('ascii', 'ignore').decode('ascii') or "User"
+    footer_text = f"— {footer_text}"
     try:
         bbox = draw.textbbox((0, 0), footer_text, font=font_name)
         footer_width = bbox[2] - bbox[0]
@@ -391,7 +375,7 @@ def quote_cmd(m):
         
         user_info = {
             'name': user.first_name,
-            'username': f"@{user.username}" if user.username else None,
+            'username': user.username,
             'text': text,
             'rep': rep,
             'rank': rank,
