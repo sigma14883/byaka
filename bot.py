@@ -21,6 +21,7 @@ if not BOT_TOKEN:
 
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "8788760253"))
 FILE = "data.json"
+FRAME_FILE = "frame.png"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 try:
@@ -41,8 +42,6 @@ def load_data():
                     data["reputation"] = {}
                 if "rep_cooldown" not in data:
                     data["rep_cooldown"] = 300
-                if "frame_url" not in data:
-                    data["frame_url"] = None
                 if "interval" not in data:
                     data["interval"] = 45
                 if "messages" not in data:
@@ -58,8 +57,7 @@ def load_data():
         "messages": [],
         "index": 0,
         "reputation": {},
-        "rep_cooldown": 300,
-        "frame_url": None
+        "rep_cooldown": 300
     }
     
     with open(FILE, 'w', encoding='utf-8') as f:
@@ -131,12 +129,111 @@ def change_rep(giver_id, target_id, amount):
     
     return True, f"✅ {'+' if amount > 0 else ''}{amount} реп!"
 
+# ============ ЗАГРУЗКА И ОБРАБОТКА РАМКИ ============
+
+@bot.message_handler(content_types=['photo'])
+def handle_photo(m):
+    """Обработка фото для установки рамки"""
+    try:
+        # Проверяем, что это админ
+        if m.from_user.id != ADMIN_ID:
+            return
+        
+        # Проверяем, есть ли подпись
+        if not m.caption:
+            return
+        
+        # Проверяем подпись
+        if m.caption.lower() not in ['/setframe', 'рамка']:
+            return
+        
+        # Получаем фото
+        photo = m.photo[-1]  # Берём самое качественное
+        file_id = photo.file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        # Сохраняем как frame.png
+        with open(FRAME_FILE, 'wb') as f:
+            f.write(downloaded_file)
+        
+        # Проверяем, что это PNG
+        try:
+            img = Image.open(FRAME_FILE)
+            img.verify()
+            bot.reply_to(m, f"✅ Рамка установлена! Размер: {photo.width}x{photo.height}")
+            logger.info(f"✅ Рамка сохранена от {m.from_user.first_name}")
+        except Exception as e:
+            bot.reply_to(m, f"❌ Файл повреждён: {e}")
+            os.remove(FRAME_FILE)
+            
+    except Exception as e:
+        logger.error(f"Ошибка загрузки фото: {e}")
+        bot.reply_to(m, f"❌ Ошибка: {e}")
+
+@bot.message_handler(content_types=['document'])
+def handle_document(m):
+    """Обработка документа PNG для установки рамки"""
+    try:
+        # Проверяем админа
+        if m.from_user.id != ADMIN_ID:
+            return
+        
+        # Проверяем подпись
+        if not m.caption or m.caption.lower() not in ['/setframe', 'рамка']:
+            return
+        
+        doc = m.document
+        
+        # Проверяем, что это PNG
+        if doc.mime_type != "image/png":
+            bot.reply_to(m, "❌ Отправь PNG файл!")
+            return
+        
+        # Скачиваем
+        file_info = bot.get_file(doc.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        # Сохраняем
+        with open(FRAME_FILE, 'wb') as f:
+            f.write(downloaded_file)
+        
+        # Проверяем
+        try:
+            img = Image.open(FRAME_FILE)
+            img.verify()
+            bot.reply_to(m, f"✅ Рамка установлена! Файл: {doc.file_name}")
+            logger.info(f"✅ Рамка сохранена от {m.from_user.first_name}")
+        except Exception as e:
+            bot.reply_to(m, f"❌ Файл повреждён: {e}")
+            os.remove(FRAME_FILE)
+            
+    except Exception as e:
+        logger.error(f"Ошибка загрузки документа: {e}")
+        bot.reply_to(m, f"❌ Ошибка: {e}")
+
+# ============ ПОКАЗАТЬ ТЕКУЩУЮ РАМКУ ============
+
+@bot.message_handler(commands=['getframe'])
+def get_frame(m):
+    """Показать текущую рамку"""
+    try:
+        if m.from_user.id != ADMIN_ID:
+            return
+        
+        if os.path.exists(FRAME_FILE):
+            with open(FRAME_FILE, 'rb') as f:
+                bot.send_photo(m.chat.id, f, caption="🖼️ Текущая рамка")
+        else:
+            bot.reply_to(m, "❌ Рамка не установлена")
+    except Exception as e:
+        logger.error(f"Ошибка getframe: {e}")
+        bot.reply_to(m, "❌ Ошибка")
+
 # ============ СОЗДАНИЕ ЦИТАТЫ ============
 
-def create_quote_image(text, user_info, frame_url=None):
-    """
-    Создаёт цитату с аватаркой, ником и репутацией
-    """
+def create_quote_image(text, user_info):
+    """Создаёт цитату с аватаркой и рамкой"""
     size = 512
     avatar_size = 80
     padding = 30
@@ -146,26 +243,17 @@ def create_quote_image(text, user_info, frame_url=None):
     
     # Загружаем рамку
     frame = None
-    if frame_url:
+    if os.path.exists(FRAME_FILE):
         try:
-            response = requests.get(frame_url, timeout=10)
-            frame = Image.open(io.BytesIO(response.content)).convert("RGBA")
+            frame = Image.open(FRAME_FILE).convert("RGBA")
             frame = frame.resize((size, size), Image.Resampling.LANCZOS)
-        except:
-            logger.error("Ошибка загрузки рамки")
-    
-    if frame:
-        bg.paste(frame, (0, 0), frame)
-    else:
-        # Рисуем стандартную рамку
-        draw = ImageDraw.Draw(bg)
-        gold = (255, 215, 0, 255)
-        draw.rectangle([(10, 10), (size-10, size-10)], outline=gold, width=5)
-        draw.rectangle([(30, 30), (size-30, size-30)], outline=gold, width=2)
+            bg.paste(frame, (0, 0), frame)
+        except Exception as e:
+            logger.error(f"Ошибка загрузки рамки: {e}")
     
     draw = ImageDraw.Draw(bg)
     
-    # Загружаем шрифт
+    # Шрифты
     try:
         font_path = os.path.join(os.path.dirname(__file__), 'fonts', 'font.ttf')
         if os.path.exists(font_path):
@@ -181,13 +269,12 @@ def create_quote_image(text, user_info, frame_url=None):
         font_name = ImageFont.load_default()
         font_rep = ImageFont.load_default()
     
-    # Загружаем аватарку
+    # Аватарка
     avatar = None
     if user_info.get('avatar'):
         try:
             response = requests.get(user_info['avatar'], timeout=10)
             avatar = Image.open(io.BytesIO(response.content)).convert("RGBA")
-            # Делаем круглую аватарку
             avatar = avatar.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
             mask = Image.new('L', (avatar_size, avatar_size), 0)
             mask_draw = ImageDraw.Draw(mask)
@@ -196,15 +283,12 @@ def create_quote_image(text, user_info, frame_url=None):
         except:
             avatar = None
     
-    # Если аватарка есть - вставляем
+    # Вставляем аватарку
+    avatar_x = padding
+    avatar_y = padding
     if avatar:
-        avatar_x = padding
-        avatar_y = padding
         bg.paste(avatar, (avatar_x, avatar_y), avatar)
     else:
-        # Рисуем заглушку
-        avatar_x = padding
-        avatar_y = padding
         draw.ellipse(
             [(avatar_x, avatar_y), (avatar_x + avatar_size, avatar_y + avatar_size)],
             fill=(100, 100, 100),
@@ -218,7 +302,7 @@ def create_quote_image(text, user_info, frame_url=None):
             fill=(255, 255, 255)
         )
     
-    # Имя пользователя (рядом с аватаркой)
+    # Имя
     name_x = avatar_x + avatar_size + 15
     name_y = avatar_y + 5
     draw.text((name_x, name_y), user_info['name'], font=font_name, fill=(255, 255, 255))
@@ -228,19 +312,15 @@ def create_quote_image(text, user_info, frame_url=None):
     rep_text = f"⭐ {user_info['rep']} | {user_info['rank']}"
     draw.text((name_x, rep_y), rep_text, font=font_rep, fill=(255, 215, 0))
     
-    # Текст цитаты (по центру)
+    # Текст цитаты
     quote_text = user_info['text']
     if len(quote_text) > 200:
         quote_text = quote_text[:197] + "..."
     
-    # Оборачиваем текст
-    max_width = size - padding * 2 - 40
-    chars_per_line = 28
-    wrapped = textwrap.wrap(quote_text, width=chars_per_line)
+    wrapped = textwrap.wrap(quote_text, width=28)
     if len(wrapped) > 6:
         wrapped = wrapped[:5] + ['...']
     
-    # Центрируем текст
     line_height = 32
     total_height = len(wrapped) * line_height
     text_start_y = (size - total_height) // 2 + 20
@@ -255,7 +335,7 @@ def create_quote_image(text, user_info, frame_url=None):
         x = (size - text_width) // 2
         draw.text((x, y), line, font=font_text, fill=(255, 255, 255))
     
-    # Никнейм внизу (как подпись)
+    # Подпись внизу
     footer_text = f"— {user_info['username']}" if user_info.get('username') else f"— {user_info['name']}"
     try:
         bbox = draw.textbbox((0, 0), footer_text, font=font_name)
@@ -290,7 +370,7 @@ def quote_cmd(m):
         quote_msg = m.reply_to_message
         user = quote_msg.from_user
         
-        # Получаем аватарку
+        # Аватарка
         avatar_url = None
         try:
             profile_photos = bot.get_user_profile_photos(user.id, limit=1)
@@ -301,15 +381,14 @@ def quote_cmd(m):
         except:
             pass
         
-        # Получаем текст
+        # Текст
         text = quote_msg.text or quote_msg.caption or "Сообщение без текста"
         
-        # Получаем репутацию
+        # Репутация
         user_rep = get_user_rep(user.id)
         rep = user_rep["rep"]
         rank = get_rank(rep)
         
-        # Данные для цитаты
         user_info = {
             'name': user.first_name,
             'username': f"@{user.username}" if user.username else None,
@@ -319,8 +398,8 @@ def quote_cmd(m):
             'avatar': avatar_url
         }
         
-        # Создаём изображение
-        img_bytes = create_quote_image(text, user_info, data.get('frame_url'))
+        # Создаём цитату
+        img_bytes = create_quote_image(text, user_info)
         
         # Отправляем
         bot.send_photo(
@@ -334,52 +413,7 @@ def quote_cmd(m):
         logger.error(f"Ошибка q: {e}")
         bot.reply_to(m, f"❌ Ошибка: {str(e)[:50]}")
 
-# ============ ЗАГРУЗКА РАМКИ ============
-
-@bot.message_handler(commands=['setframe'])
-def set_frame(m):
-    """Установка PNG рамки"""
-    try:
-        if m.from_user.id != ADMIN_ID:
-            bot.reply_to(m, "❌ Только для админа!")
-            return
-        
-        if not m.reply_to_message or not m.reply_to_message.document:
-            bot.reply_to(m, "❌ Ответь на PNG файл: /setframe")
-            return
-        
-        doc = m.reply_to_message.document
-        if doc.mime_type != "image/png":
-            bot.reply_to(m, "❌ Отправь PNG файл!")
-            return
-        
-        # Скачиваем файл
-        file_info = bot.get_file(doc.file_id)
-        file_path = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-        
-        # Сохраняем URL в data
-        data["frame_url"] = file_path
-        save()
-        
-        # Отправляем превью
-        bot.reply_to(m, f"✅ Рамка установлена!\n\n{file_path}")
-        
-    except Exception as e:
-        logger.error(f"Ошибка setframe: {e}")
-        bot.reply_to(m, "❌ Ошибка установки рамки")
-
-@bot.message_handler(commands=['frameinfo'])
-def frame_info(m):
-    """Информация о рамке"""
-    if m.from_user.id != ADMIN_ID:
-        return
-    
-    if data.get('frame_url'):
-        bot.reply_to(m, f"🖼️ Текущая рамка:\n{data['frame_url']}")
-    else:
-        bot.reply_to(m, "❌ Рамка не установлена. Используй /setframe")
-
-# ============ РЕПУТАЦИЯ (КОМАНДЫ) ============
+# ============ РЕПУТАЦИЯ ============
 
 @bot.message_handler(commands=['prep'])
 def plus_rep(m):
@@ -442,15 +476,39 @@ def top_rep(m):
             pass
     bot.reply_to(m, response)
 
+# ============ ПОМОЩЬ ============
+
+@bot.message_handler(commands=['start', 'help'])
+def help_cmd(m):
+    if m.from_user.id == ADMIN_ID:
+        bot.reply_to(m,
+            "👑 Команды бота:\n\n"
+            "📝 ЦИТАТЫ:\n"
+            "/q (реплай) — создать цитату\n\n"
+            "🖼️ РАМКА:\n"
+            "Отправь фото с подписью /setframe\n"
+            "Или отправь PNG с подписью /setframe\n"
+            "/getframe — показать текущую рамку\n\n"
+            "⭐ РЕПУТАЦИЯ:\n"
+            "/prep (реплай) — +1 реп\n"
+            "/mrep (реплай) — -1 реп\n"
+            "/rep — показать репутацию\n"
+            "/toprep — топ репутации"
+        )
+
 # ============ ЗАПУСК ============
 
 logger.info("🔥 Бот запущен!")
 logger.info(f"👑 Админ: {ADMIN_ID}")
 
+if os.path.exists(FRAME_FILE):
+    logger.info("🖼️ Рамка найдена")
+else:
+    logger.info("🖼️ Рамка не установлена")
+
 try:
-    bot.send_message(ADMIN_ID, "✅ Бот запущен!\n\n/q - создать цитату\n/setframe - установить рамку")
+    bot.send_message(ADMIN_ID, "✅ Бот запущен!\n\nОтправь фото с подписью /setframe чтобы установить рамку")
 except:
     pass
 
-threading.Thread(target=lambda: None, daemon=True).start()
 bot.infinity_polling()
