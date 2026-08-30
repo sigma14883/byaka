@@ -11,14 +11,14 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN не установлен")
+    logger.error(" BOT_TOKEN не установлен")
     sys.exit(1)
 
 try:
     GROUP_ID = int(os.environ.get("GROUP_ID", "-1003911641166"))
     ADMIN_ID = int(os.environ.get("ADMIN_ID", "8788760253"))
 except ValueError:
-    logger.error("❌ GROUP_ID и ADMIN_ID должны быть числами")
+    logger.error(" GROUP_ID и ADMIN_ID должны быть числами")
     sys.exit(1)
 
 FILE = "data.json"
@@ -26,16 +26,16 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 try:
     bot.get_me()
-    logger.info("✅ Бот авторизован!")
+    logger.info("бот авторизован")
 except Exception as e:
-    logger.error(f"❌ Ошибка: {e}")
+    logger.error(f:ошибка: {e}")
     sys.exit(1)
 
 # Статусы по репутации (порядок от меньшего к большему)
 RANKINGS = [
-    (-100, "👻 Призрак"),
-    (-75, "💀 Тень"),
-    (-50, "😈 Недостойный"),
+    (-100, "👻 еблан"),
+    (-75, "💀 лох"),
+    (-50, "😈 курымдык"),
     (-25, "😔 Опущенный"),
     (-10, "🥴 Тёмный друн"),
     (0, "🍺 Друн"),
@@ -47,17 +47,15 @@ RANKINGS = [
 ]
 
 def get_rank(rep):
-    """Получить статус по репутации"""
-    # Идём с конца (от большего к меньшему)
+    """получить статус по репутации"""
     for i in range(len(RANKINGS) - 1, -1, -1):
         threshold, rank = RANKINGS[i]
         if rep >= threshold:
             return rank
-    # Если репутация меньше -100
     return RANKINGS[0][1]
 
 def load_data():
-    """Загрузка данных из файла"""
+    """загрузка данных из файла"""
     if os.path.exists(FILE):
         try:
             with open(FILE, 'r', encoding='utf-8') as f:
@@ -69,27 +67,25 @@ def load_data():
                 if "messages" not in data:
                     data["messages"] = [
                         '🔔 Не забудь зайти в наш <a href="https://discord.gg/AqjCnK77c">Дискорд-сервер</a>!',
-                        '🔔 Подпишись на мой <a href="https://t.me/killer2017official">Телеграм-канал</a>!',
-                        '🔔 Есть вопрос или предложение? <a href="https://t.me/hahahahahahahahaaahhahahahahaha">Тебе сюда</a>!'
+                        '🔔 Подпишись на мой <a href="https://t.me/killer2017official">Телеграм-канал</a>!'
                     ]
                 if "interval" not in data:
                     data["interval"] = 45
                 if "index" not in data:
                     data["index"] = 0
                 
-                logger.info(f"✅ Данные загружены из {FILE}")
-                logger.info(f"📊 Пользователей в репутации: {len(data.get('reputation', {}))}")
+                logger.info(f"данные загружены из {FILE}")
+                logger.info(f" пользователей в репутации: {len(data.get('reputation', {}))}")
                 return data
         except Exception as e:
-            logger.error(f"❌ Ошибка загрузки: {e}")
+            logger.error(f"ошибка загрузки: {e}")
     
-    logger.info("🆕 Создаём новый файл данных")
+    logger.info("создаём новый файл данных")
     default_data = {
         "interval": 45,
         "messages": [
             '🔔 Не забудь зайти в наш <a href="https://discord.gg/AqjCnK77c">Дискорд-сервер</a>!',
-            '🔔 Подпишись на мой <a href="https://t.me/killer2017official">Телеграм-канал</a>!',
-            '🔔 Есть вопрос или предложение? <a href="https://t.me/hahahahahahahahaaahhahahahahaha">Тебе сюда</a>!'
+            '🔔 Подпишись на мой <a href="https://t.me/killer2017official">Телеграм-канал</a>!'
         ],
         "index": 0,
         "reputation": {},
@@ -101,22 +97,22 @@ def load_data():
     
     return default_data
 
-# Загружаем данные
+#загружаем данные
 data = load_data()
 
 def save():
-    """Сохранение данных в файл"""
+    """сохранение данных в файл"""
     try:
         with open(FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info("💾 Данные сохранены")
+        logger.info("данные сохранены")
         return True
     except Exception as e:
-        logger.error(f"❌ Ошибка сохранения: {e}")
+        logger.error(f"ошибка сохранения: {e}")
         return False
 
 def get_user_rep(user_id):
-    """Получить данные репутации пользователя"""
+    """получить данные репутации пользователя"""
     uid = str(user_id)
     if uid not in data["reputation"]:
         data["reputation"][uid] = {"rep": 0, "last_rep_time": 0}
@@ -124,15 +120,14 @@ def get_user_rep(user_id):
     return data["reputation"][uid]
 
 def change_rep(giver_id, target_id, amount):
-    """Изменить репутацию"""
+    """изменить репутацию"""
     giver_uid = str(giver_id)
     target_uid = str(target_id)
     
-    # Нельзя менять свою репутацию
     if giver_id == target_id:
         return False, "❌ Нельзя менять свою репутацию!"
     
-    # Проверяем кулдаун
+    # проверяем кулдаун
     current_time = time.time()
     giver_data = get_user_rep(giver_id)
     
@@ -142,14 +137,12 @@ def change_rep(giver_id, target_id, amount):
         seconds = wait_time % 60
         return False, f"⏳ Подожди {minutes} мин {seconds} сек перед следующим репом!"
     
-    # Изменяем репутацию цели
     target_data = get_user_rep(target_id)
     target_data["rep"] += amount
     
-    # Обновляем время последнего репа у дающего
     giver_data["last_rep_time"] = current_time
     
-    # Сохраняем
+    # сохраняем
     data["reputation"][giver_uid] = giver_data
     data["reputation"][target_uid] = target_data
     save()
@@ -177,9 +170,6 @@ def scheduler():
     while True:
         time.sleep(data["interval"] * 60)
         send_reminder()
-
-# ============ КОМАНДЫ РЕПУТАЦИИ ============
-
 @bot.message_handler(commands=['prep'])
 def plus_rep(m):
     """Добавить репутацию (+1)"""
@@ -337,8 +327,6 @@ def top_rep(m):
         logger.error(f"Ошибка toprep: {e}")
         bot.reply_to(m, "❌ Ошибка")
 
-# ============ АДМИН КОМАНДЫ ============
-
 @bot.message_handler(commands=['start', 'help'])
 def help_cmd(m):
     if m.chat.type == "private" and m.from_user.id == ADMIN_ID:
@@ -441,14 +429,14 @@ def q(m):
     if m.chat.id == GROUP_ID:
         bot.reply_to(m, '💬 <a href="https://t.me/hahahahahahahahaaahhahahahahaha">Вопросы</a>', parse_mode="HTML")
 
-logger.info("🔥 Бот запущен!")
-logger.info(f"👑 Админ: {ADMIN_ID}")
-logger.info(f"👥 Группа: {GROUP_ID}")
-logger.info(f"📁 Файл данных: {FILE}")
-logger.info(f"👥 Пользователей в репе: {len(data['reputation'])}")
+logger.info("бот запущен!")
+logger.info(f"админ: {ADMIN_ID}")
+logger.info(f"группа: {GROUP_ID}")
+logger.info(f"файл данных: {FILE}")
+logger.info(f"пользователей в репе: {len(data['reputation'])}")
 
 try:
-    bot.send_message(GROUP_ID, "✅ Бот перезапущен! Репутация работает!")
+    bot.send_message(GROUP_ID, "✅ Бот перезапущен")
 except Exception as e:
     logger.error(f"Ошибка отправки: {e}")
 
